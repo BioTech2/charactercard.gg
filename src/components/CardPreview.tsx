@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { toPng } from "html-to-image";
 import {
@@ -21,6 +21,8 @@ import { formatFaction, formatScore } from "@/lib/normalize";
 import { PlayerCardProfile } from "@/types/player-card";
 
 const WOW_ICON_BASE = "https://render.worldofwarcraft.com/us/icons/56";
+const CARD_WIDTH = 720;
+const CARD_HEIGHT = 1008;
 
 const classIconNames: Record<string, string> = {
   "Death Knight": "classicon_deathknight",
@@ -149,14 +151,36 @@ type Props = {
 
 export function CardPreview({ profile }: Props) {
   const card = profile ?? fallbackProfile;
+  const previewShellRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [exportError, setExportError] = useState("");
+  const [previewScale, setPreviewScale] = useState(1);
   const itemLevelNote =
     card.itemLevelEquipped && card.itemLevelTotal && card.itemLevelEquipped !== card.itemLevelTotal
       ? `Eq ${card.itemLevelEquipped} / Bag ${card.itemLevelTotal}`
       : "Equipped";
   const isRaid = card.mode === "raid";
   const statusBadges = card.badges.filter((badge) => !badge.startsWith("Role:")).slice(0, 2);
+
+  useEffect(() => {
+    const previewShell = previewShellRef.current;
+    if (!previewShell) return;
+
+    function updatePreviewScale() {
+      const availableWidth = previewShell?.clientWidth ?? CARD_WIDTH;
+      setPreviewScale(Math.min(1, availableWidth / CARD_WIDTH));
+    }
+
+    updatePreviewScale();
+    const resizeObserver = new ResizeObserver(updatePreviewScale);
+    resizeObserver.observe(previewShell);
+    window.addEventListener("resize", updatePreviewScale);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updatePreviewScale);
+    };
+  }, []);
 
   async function downloadCard() {
     if (!cardRef.current) return;
@@ -183,7 +207,7 @@ export function CardPreview({ profile }: Props) {
   }
 
   return (
-    <div className="w-full max-w-[720px]">
+    <div ref={previewShellRef} className="w-full max-w-[720px] overflow-visible">
       <div className="mb-4 flex justify-end">
         <button
           onClick={downloadCard}
@@ -200,96 +224,115 @@ export function CardPreview({ profile }: Props) {
       ) : null}
 
       <div
-        ref={cardRef}
-        className="card-holo relative aspect-[5/7] overflow-hidden rounded-[2rem] border-[10px] border-amber-200/70 p-4 shadow-cardGlow"
+        className="relative mx-auto overflow-visible"
+        style={{
+          height: CARD_HEIGHT * previewScale,
+          width: CARD_WIDTH * previewScale
+        }}
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(250,204,21,0.35),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.15),rgba(2,6,23,0.96))]" />
-        <ClassEmblem className={card.className} specName={card.specName} />
-        <FactionEmblem faction={card.faction} />
+        <div
+          className="absolute left-1/2 top-0"
+          style={{
+            height: CARD_HEIGHT,
+            width: CARD_WIDTH,
+            transform: `translateX(-50%) scale(${previewScale})`,
+            transformOrigin: "top center"
+          }}
+        >
+          <div
+            ref={cardRef}
+            className="card-holo relative overflow-hidden rounded-[2rem] border-[10px] border-amber-200/70 p-4 shadow-cardGlow"
+            style={{ height: CARD_HEIGHT, width: CARD_WIDTH }}
+          >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(250,204,21,0.35),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.15),rgba(2,6,23,0.96))]" />
+          <ClassEmblem className={card.className} specName={card.specName} />
+          <FactionEmblem faction={card.faction} />
 
-        <div className="relative flex h-full flex-col rounded-[1.35rem] border border-amber-200/60 bg-slate-950/72 p-4">
-          <header className="rounded-2xl border border-amber-200/60 bg-slate-950/80 px-4 py-3 text-center">
-            <div className="flex items-center justify-center gap-3">
-              <Sparkles className="h-6 w-6 text-amber-200" />
-              <h2 className="font-display text-3xl font-black uppercase tracking-[0.12em] text-gold">
-                {isRaid ? "Raid All-Star" : "Mythic+ All-Star"}
-              </h2>
-              <Sparkles className="h-6 w-6 text-amber-200" />
-            </div>
-          </header>
-
-          <section className="mt-4 grid flex-1 grid-cols-[0.9fr_1.72fr_1.03fr] gap-3">
-            <aside className="space-y-3">
-              <StatBadge label="iLvl" value={card.itemLevel ?? "N/A"} note={card.itemLevel ? itemLevelNote : undefined} />
-              {!isRaid ? (
-                <StatBadge label="IO" value={formatScore(card.mythicPlusScore)} />
-              ) : null}
-
-              {isRaid ? (
-                <RaidAffiliationPanel card={card} />
-              ) : (
-                <div className="rounded-2xl border border-amber-200/50 bg-slate-950/85 p-3 text-sm font-bold text-slate-100">
-                  {statusBadges.map((badge) => (
-                    <BadgeLine key={badge} icon={<Timer className="h-4 w-4" />} text={badge} />
-                  ))}
-                  <BadgeLine icon={<Users className="h-4 w-4" />} text={card.guild ? `Guild: ${card.guild}` : "Guild TBD"} />
-                  <BadgeLine icon={<Flag className="h-4 w-4" />} text={formatFaction(card.faction) ?? "Faction TBD"} />
-                </div>
-              )}
-
-              <PerformancePanel logs={card.logs} role={card.role} mode={card.mode} />
-            </aside>
-
-            <main className="flex min-w-0 flex-col overflow-visible rounded-2xl border border-amber-200/40 bg-[radial-gradient(circle_at_50%_28%,rgba(250,204,21,0.28),transparent_35%),linear-gradient(180deg,rgba(30,41,59,0.75),rgba(2,6,23,0.9))] p-3">
-              <div className="relative mt-1 min-h-[18rem] flex-1 overflow-hidden rounded-2xl border border-amber-200/25 bg-[radial-gradient(circle_at_50%_28%,rgba(250,204,21,0.32),transparent_36%),linear-gradient(180deg,rgba(15,23,42,0.22),rgba(2,6,23,0.72))]">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.12),transparent_28%),linear-gradient(180deg,transparent_52%,rgba(2,6,23,0.96)_96%)]" />
-                <HeroCharacterImage card={card} />
-                <div className="absolute inset-x-0 bottom-7 flex justify-center">
-                  <RoleMedallion role={card.role} />
-                </div>
+          <div className="relative flex h-full flex-col rounded-[1.35rem] border border-amber-200/60 bg-slate-950/72 p-4">
+            <header className="rounded-2xl border border-amber-200/60 bg-slate-950/80 px-4 py-3 text-center">
+              <div className="flex items-center justify-center gap-3">
+                <Sparkles className="h-6 w-6 text-amber-200" />
+                <h2 className="font-display text-3xl font-black uppercase tracking-[0.12em] text-gold">
+                  {isRaid ? "Raid All-Star" : "Mythic+ All-Star"}
+                </h2>
+                <Sparkles className="h-6 w-6 text-amber-200" />
               </div>
+            </header>
 
-              <div className="mt-3 min-w-0 rounded-2xl border border-amber-200/40 bg-slate-950/80 px-1.5 py-3 text-center">
-                <h3
-                  className="mx-auto block max-w-full overflow-visible whitespace-nowrap font-display font-black leading-none text-gold"
-                  style={{
-                    fontSize: getNameFontSize(card.name),
-                    letterSpacing: 0
-                  }}
-                  title={card.name}
-                >
-                  {card.name}
-                </h3>
-                <p className="mt-1 font-display text-2xl font-bold text-slate-200">
-                  {card.realm}
-                </p>
-              </div>
-            </main>
+            <section className="mt-4 grid flex-1 grid-cols-[0.9fr_1.72fr_1.03fr] gap-3">
+              <aside className="space-y-3">
+                <StatBadge label="iLvl" value={card.itemLevel ?? "N/A"} note={card.itemLevel ? itemLevelNote : undefined} />
+                {!isRaid ? (
+                  <StatBadge label="IO" value={formatScore(card.mythicPlusScore)} />
+                ) : null}
 
-            <aside className="space-y-3">
-              {isRaid ? <RaidBossPanel raid={card.raid} /> : <BestKeysPanel bestKeys={card.bestKeys} />}
+                {isRaid ? (
+                  <RaidAffiliationPanel card={card} />
+                ) : (
+                  <div className="rounded-2xl border border-amber-200/50 bg-slate-950/85 p-3 text-sm font-bold text-slate-100">
+                    {statusBadges.map((badge) => (
+                      <BadgeLine key={badge} icon={<Timer className="h-4 w-4" />} text={badge} />
+                    ))}
+                    <BadgeLine icon={<Users className="h-4 w-4" />} text={card.guild ? `Guild: ${card.guild}` : "Guild TBD"} />
+                    <BadgeLine icon={<Flag className="h-4 w-4" />} text={formatFaction(card.faction) ?? "Faction TBD"} />
+                  </div>
+                )}
 
-              <Panel title="Signature Plays">
-                <div className="space-y-2">
-                  {card.signaturePlays.map((play) => (
-                    <div key={play} className="flex items-center gap-2 text-[13px] font-semibold">
-                      <Swords className="h-4 w-4 shrink-0 text-amber-200" />
-                      <span>{play}</span>
-                    </div>
-                  ))}
+                <PerformancePanel logs={card.logs} role={card.role} mode={card.mode} />
+              </aside>
+
+              <main className="flex min-w-0 flex-col overflow-visible rounded-2xl border border-amber-200/40 bg-[radial-gradient(circle_at_50%_28%,rgba(250,204,21,0.28),transparent_35%),linear-gradient(180deg,rgba(30,41,59,0.75),rgba(2,6,23,0.9))] p-3">
+                <div className="relative mt-1 min-h-[18rem] flex-1 overflow-hidden rounded-2xl border border-amber-200/25 bg-[radial-gradient(circle_at_50%_28%,rgba(250,204,21,0.32),transparent_36%),linear-gradient(180deg,rgba(15,23,42,0.22),rgba(2,6,23,0.72))]">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.12),transparent_28%),linear-gradient(180deg,transparent_52%,rgba(2,6,23,0.96)_96%)]" />
+                  <HeroCharacterImage card={card} />
+                  <div className="absolute inset-x-0 bottom-7 flex justify-center">
+                    <RoleMedallion role={card.role} />
+                  </div>
                 </div>
-              </Panel>
-            </aside>
-          </section>
 
-          <section className="relative mt-4 min-h-[6.15rem] rounded-2xl border border-amber-200/50 bg-stone-100 px-5 py-4 text-center text-slate-950">
-            <div className="mb-2 text-sm font-black uppercase tracking-[0.25em] text-slate-700">
-              {card.race ?? "Dwarf"} {card.specName ?? "Retribution"} {card.className ?? "Paladin"}
-            </div>
-            <p className="mx-auto max-w-[92%] font-display text-[1.45rem] italic leading-tight">
-              &quot;{isRaid ? getRaidQuote(card.role) : card.classQuote}&quot;
-            </p>
-          </section>
+                <div className="mt-3 min-w-0 rounded-2xl border border-amber-200/40 bg-slate-950/80 px-1.5 py-3 text-center">
+                  <h3
+                    className="mx-auto block max-w-full overflow-visible whitespace-nowrap font-display font-black leading-none text-gold"
+                    style={{
+                      fontSize: getNameFontSize(card.name),
+                      letterSpacing: 0
+                    }}
+                    title={card.name}
+                  >
+                    {card.name}
+                  </h3>
+                  <p className="mt-1 font-display text-2xl font-bold text-slate-200">
+                    {card.realm}
+                  </p>
+                </div>
+              </main>
+
+              <aside className="space-y-3">
+                {isRaid ? <RaidBossPanel raid={card.raid} /> : <BestKeysPanel bestKeys={card.bestKeys} />}
+
+                <Panel title="Signature Plays">
+                  <div className="space-y-2">
+                    {card.signaturePlays.map((play) => (
+                      <div key={play} className="flex items-center gap-2 text-[13px] font-semibold">
+                        <Swords className="h-4 w-4 shrink-0 text-amber-200" />
+                        <span>{play}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              </aside>
+            </section>
+
+            <section className="relative mt-4 min-h-[6.15rem] rounded-2xl border border-amber-200/50 bg-stone-100 px-5 py-4 text-center text-slate-950">
+              <div className="mb-2 text-sm font-black uppercase tracking-[0.25em] text-slate-700">
+                {card.race ?? "Dwarf"} {card.specName ?? "Retribution"} {card.className ?? "Paladin"}
+              </div>
+              <p className="mx-auto max-w-[92%] font-display text-[1.45rem] italic leading-tight">
+                &quot;{isRaid ? getRaidQuote(card.role) : card.classQuote}&quot;
+              </p>
+            </section>
+          </div>
+        </div>
         </div>
       </div>
     </div>
