@@ -1,6 +1,11 @@
 export type Region = "us" | "eu" | "kr" | "tw" | "cn";
 export type CardMode = "mythic-plus" | "raid";
 
+export type RealmOption = {
+  name: string;
+  slug: string;
+};
+
 export type BestKey = {
   dungeon: string;
   shortName?: string;

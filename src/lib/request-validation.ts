@@ -4,7 +4,7 @@ export const validRegions: Region[] = ["us", "eu", "kr", "tw", "cn"];
 export const validModes: CardMode[] = ["mythic-plus", "raid"];
 
 const characterNamePattern = /^[\p{L}' -]+$/u;
-const realmNamePattern = /^[\p{L}0-9.' -]+$/u;
+const realmNamePattern = /^[\p{L}0-9().' -]+$/u;
 
 export function validateCharacterLookupInput({
   region,

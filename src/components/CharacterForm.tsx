@@ -3,8 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Search, XCircle } from "lucide-react";
 import { REALMS_BY_REGION } from "@/data/realms";
-import { formatDisplayName } from "@/lib/normalize";
-import { CardMode, CharacterSearchSuggestion, PlayerCardProfile, Region } from "@/types/player-card";
+import { formatDisplayName, normalizeRealm } from "@/lib/normalize";
+import { CardMode, CharacterSearchSuggestion, PlayerCardProfile, RealmOption, Region } from "@/types/player-card";
 
 type Props = {
   onProfile: (profile: PlayerCardProfile) => void;
@@ -22,10 +22,12 @@ export function CharacterForm({ onProfile }: Props) {
   const [resolvedProfile, setResolvedProfile] = useState<PlayerCardProfile | null>(null);
   const [suggestions, setSuggestions] = useState<CharacterSearchSuggestion[]>([]);
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
-  const realms = useMemo(() => REALMS_BY_REGION[region], [region]);
+  const fallbackRealms = useMemo(() => buildFallbackRealms(region), [region]);
+  const [realms, setRealms] = useState<RealmOption[]>(fallbackRealms);
 
   function changeRegion(nextRegion: Region) {
     setRegion(nextRegion);
+    setRealms(buildFallbackRealms(nextRegion));
     setRealm("");
     resetCharacterSearch();
   }
@@ -48,6 +50,22 @@ export function CharacterForm({ onProfile }: Props) {
   }
 
   useEffect(() => {
+    const controller = new AbortController();
+
+    fetchRealms(region, controller.signal)
+      .then((nextRealms) => {
+        if (controller.signal.aborted) return;
+        if (nextRealms.length) setRealms(nextRealms);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setRealms(fallbackRealms);
+      });
+
+    return () => controller.abort();
+  }, [fallbackRealms, region]);
+
+  useEffect(() => {
     const characterName = formatDisplayName(name);
 
     if (!realm.trim() || characterName.length < 2) {
@@ -57,7 +75,7 @@ export function CharacterForm({ onProfile }: Props) {
     if (
       resolvedProfile &&
       resolvedProfile.name === characterName &&
-      resolvedProfile.realm === realm &&
+      normalizeRealm(resolvedProfile.realm) === realm &&
       resolvedProfile.region === region
     ) {
       return;
@@ -202,9 +220,9 @@ export function CharacterForm({ onProfile }: Props) {
             <option value="" disabled>
               Choose Realm
             </option>
-            {realms.map((realmName) => (
-              <option key={realmName} value={realmName}>
-                {realmName}
+            {realms.map((realmOption) => (
+              <option key={realmOption.slug} value={realmOption.slug}>
+                {realmOption.name}
               </option>
             ))}
           </select>
@@ -252,6 +270,22 @@ export function CharacterForm({ onProfile }: Props) {
       </div>
     </form>
   );
+}
+
+async function fetchRealms(region: Region, signal?: AbortSignal): Promise<RealmOption[]> {
+  const response = await fetch(`/api/realms?${new URLSearchParams({ region }).toString()}`, { signal });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) return [];
+
+  return (data?.realms ?? []) as RealmOption[];
+}
+
+function buildFallbackRealms(region: Region): RealmOption[] {
+  return REALMS_BY_REGION[region].map((realm) => ({
+    name: realm,
+    slug: normalizeRealm(realm)
+  }));
 }
 
 async function searchCharacters({

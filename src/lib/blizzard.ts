@@ -1,4 +1,4 @@
-import type { Region } from "@/types/player-card";
+import type { RealmOption, Region } from "@/types/player-card";
 import { normalizeCharacterName, normalizeRealm } from "./normalize";
 
 type BlizzardCharacterSummary = {
@@ -18,6 +18,13 @@ type BlizzardCharacterMedia = {
   assets?: Array<{
     key?: string;
     value?: string;
+  }>;
+};
+
+type BlizzardRealmIndex = {
+  realms?: Array<{
+    name?: string;
+    slug?: string;
   }>;
 };
 
@@ -53,7 +60,8 @@ const apiHostByRegion: Record<Region, string> = {
   cn: "gateway.battlenet.com.cn"
 };
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
+const cachedTokens = new Map<Region, { token: string; expiresAt: number }>();
+const cachedRealms = new Map<Region, { realms: RealmOption[]; expiresAt: number }>();
 
 export async function fetchBlizzardCharacterProfile(params: {
   region: Region;
@@ -107,6 +115,59 @@ export async function fetchBlizzardCharacterProfile(params: {
   }
 }
 
+export async function fetchBlizzardRealms(region: Region): Promise<RealmOption[]> {
+  if (!process.env.BLIZZARD_CLIENT_ID || !process.env.BLIZZARD_CLIENT_SECRET) {
+    return [];
+  }
+
+  const cached = cachedRealms.get(region);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.realms;
+  }
+
+  try {
+    const token = await getBlizzardAccessToken(region);
+    const searchParams = new URLSearchParams({
+      namespace: `dynamic-${region}`,
+      locale: localeByRegion[region]
+    });
+
+    const response = await fetch(
+      `https://${apiHostByRegion[region]}/data/wow/realm/index?${searchParams.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        next: {
+          revalidate: 86_400
+        }
+      }
+    );
+
+    if (!response.ok) return [];
+
+    const data = (await response.json()) as BlizzardRealmIndex;
+    const realms = dedupeRealms(
+      (data.realms ?? [])
+        .filter((realm): realm is { name: string; slug: string } => Boolean(realm.name && realm.slug))
+        .filter((realm) => isPublicRealmName(realm.name))
+        .map((realm) => ({
+          name: realm.name,
+          slug: realm.slug
+        }))
+    );
+
+    cachedRealms.set(region, {
+      realms,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000
+    });
+
+    return realms;
+  } catch {
+    return [];
+  }
+}
+
 async function fetchCharacterRender({
   token,
   profileUrl,
@@ -138,6 +199,7 @@ async function fetchCharacterRender({
 }
 
 async function getBlizzardAccessToken(region: Region): Promise<string> {
+  const cachedToken = cachedTokens.get(region);
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
     return cachedToken.token;
   }
@@ -162,14 +224,38 @@ async function getBlizzardAccessToken(region: Region): Promise<string> {
   }
 
   const data = (await response.json()) as { access_token: string; expires_in: number };
-  cachedToken = {
+  const nextToken = {
     token: data.access_token,
     expiresAt: Date.now() + data.expires_in * 1000
   };
+  cachedTokens.set(region, nextToken);
 
-  return cachedToken.token;
+  return nextToken.token;
 }
 
 function validItemLevel(itemLevel?: number): number | undefined {
   return typeof itemLevel === "number" && itemLevel > 0 ? itemLevel : undefined;
+}
+
+function dedupeRealms(realms: RealmOption[]): RealmOption[] {
+  const seen = new Set<string>();
+
+  return realms
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter((realm) => {
+      if (seen.has(realm.slug)) return false;
+      seen.add(realm.slug);
+      return true;
+    });
+}
+
+function isPublicRealmName(name: string): boolean {
+  const normalizedName = name.toLowerCase();
+
+  return (
+    !normalizedName.startsWith("zzz_") &&
+    !normalizedName.includes("account realm") &&
+    !normalizedName.includes("-inst") &&
+    !normalizedName.includes("보조")
+  );
 }
