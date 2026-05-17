@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="goldGlow" cx="50%" cy="34%" r="70%">
+      <stop offset="0%" stop-color="#fff4b8" />
+      <stop offset="44%" stop-color="#f8d878" />
+      <stop offset="100%" stop-color="#8a6b24" />
+    </radialGradient>
+    <linearGradient id="cardFace" x1="16" x2="48" y1="10" y2="54">
+      <stop offset="0%" stop-color="#10182f" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#020617" />
+  <rect x="6" y="6" width="52" height="52" rx="11" fill="url(#cardFace)" stroke="url(#goldGlow)" stroke-width="3" />
+  <path d="M20 16h24a4 4 0 0 1 4 4v24a4 4 0 0 1-4 4H20a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4Z" fill="#071126" stroke="#f8d878" stroke-width="2" />
+  <path d="M32 18l3.2 7.1 7.8.8-5.8 5.2 1.6 7.7L32 35l-6.8 3.8 1.6-7.7-5.8-5.2 7.8-.8L32 18Z" fill="url(#goldGlow)" />
+  <path d="M22 45h20" stroke="#c7f9ff" stroke-width="3" stroke-linecap="round" />
+  <path d="M26 50h12" stroke="#c7f9ff" stroke-width="3" stroke-linecap="round" />
+</svg>
